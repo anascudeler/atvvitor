@@ -1,59 +1,89 @@
-import { HttpError } from '../../utils/http-error.js';
-import * as usuarioService from '../usuario/usuario.service.js';
+import pool from '../../db/config.js';
 
-let tarefas = [];
-let nextId = 1;
+const COLUNAS = 'id, fk_usuario_id, titulo, descricao, status, created_at, updated_at';
 
-export function getAll(filtro = {}) {
-  if (filtro.usuarioId) return tarefas.filter((t) => t.usuarioId === filtro.usuarioId);
-  return tarefas;
+export async function getAll() {
+    const [rows] = await pool.query(
+        `SELECT ${COLUNAS} FROM tarefas ORDER BY created_at DESC`
+    );
+
+    return rows;
 }
 
-export function getById(id) {
-  return tarefas.find((t) => t.id === id) ?? null;
+export async function getById(id) {
+    const [rows] = await pool.execute(
+        `SELECT ${COLUNAS} FROM tarefas WHERE id = ?`,
+        [id]
+    );
+
+    return rows[0] || null;
 }
 
-export function create(dados) {
-  const usuario = usuarioService.getById(dados.usuarioId);
-  if (!usuario) throw HttpError.notFound('Usuário não encontrado');
+export async function create(dados) {
+    const [resultado] = await pool.execute(
+        `INSERT INTO tarefas (fk_usuario_id, titulo, descricao, status)
+         VALUES (?, ?, ?, ?)`,
+        [
+            dados.fk_usuario_id,
+            dados.titulo,
+            dados.descricao ?? null,
+            dados.status ?? 'PENDENTE'
+        ]
+    );
 
-  const tarefa = {
-    id: nextId++,
-    usuarioId: dados.usuarioId,
-    titulo: dados.titulo,
-    descricao: dados.descricao ?? null,
-    status: dados.status ?? 'PENDENTE',
-  };
-  tarefas.push(tarefa);
-  return tarefa;
+    return resultado.insertId;
 }
 
-export function update(id, dados) {
-  const tarefa = getById(id);
-  if (!tarefa) throw HttpError.notFound('Tarefa não encontrada');
+export async function update(id, dados) {
+    const tarefaExistente = await getById(id);
 
-  if (tarefa.status === 'CONCLUIDA') {
-    throw HttpError.badRequest('Tarefa já concluída e não pode ser editada');
-  }
+    if (!tarefaExistente) {
+        return null;
+    }
 
-  if (dados.titulo !== undefined) tarefa.titulo = dados.titulo;
-  if (dados.descricao !== undefined) tarefa.descricao = dados.descricao;
-  if (dados.status !== undefined) tarefa.status = dados.status;
-  return tarefa;
+    const campos = [];
+    const valores = [];
+
+    if (dados.fk_usuario_id !== undefined) {
+        campos.push('fk_usuario_id = ?');
+        valores.push(dados.fk_usuario_id);
+    }
+
+    if (dados.titulo !== undefined) {
+        campos.push('titulo = ?');
+        valores.push(dados.titulo);
+    }
+
+    if (dados.descricao !== undefined) {
+        campos.push('descricao = ?');
+        valores.push(dados.descricao);
+    }
+
+    if (dados.status !== undefined) {
+        campos.push('status = ?');
+        valores.push(dados.status);
+    }
+
+    if (campos.length === 0) {
+        return null;
+    }
+
+    valores.push(id);
+
+    await pool.execute(
+        `UPDATE tarefas SET ${campos.join(', ')} WHERE id = ?`,
+        valores
+    );
+
+    return getById(id);
 }
 
-export function remove(id) {
-  const idx = tarefas.findIndex((t) => t.id === id);
-  if (idx === -1) throw HttpError.notFound('Tarefa não encontrada');
-  tarefas.splice(idx, 1);
-  return true;
+export async function remove(id) {
+    const [resultado] = await pool.execute(
+        'DELETE FROM tarefas WHERE id = ?',
+        [id]
+    );
+
+    return resultado.affectedRows > 0;
 }
 
-export function removeByUsuarioId(usuarioId) {
-  tarefas = tarefas.filter((t) => t.usuarioId !== usuarioId);
-}
-
-export function _reset() {
-  tarefas = [];
-  nextId = 1;
-}

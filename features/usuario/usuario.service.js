@@ -1,63 +1,163 @@
-import { HttpError } from '../../utils/http-error.js';
+import pool from '../../db/config.js';
+import bcrypt from 'bcrypt';
 
-let usuarios = [];
-let nextId = 1;
+const COLUNAS_PUBLICAS = 'id, email, nome';
 
-export function getAll() {
-  return usuarios.map(toPublic);
+// Listar todos os usuários
+export async function getAll() {
+    const [rows] = await pool.query(
+        `SELECT ${COLUNAS_PUBLICAS} FROM usuarios`
+    );
+
+    return rows;
 }
 
-export function getById(id) {
-  const u = usuarios.find((x) => x.id === id);
-  return u ? toPublic(u) : null;
+// Buscar usuário por ID
+export async function getById(id) {
+    const [rows] = await pool.execute(
+        `SELECT ${COLUNAS_PUBLICAS} FROM usuarios WHERE id = ?`,
+        [id]
+    );
+
+    return rows[0] || null;
 }
 
-function findRawById(id) {
-  return usuarios.find((x) => x.id === id);
+// Buscar usuário por e-mail
+export async function getByEmail(email) {
+    const [rows] = await pool.execute(
+        `SELECT ${COLUNAS_PUBLICAS} FROM usuarios WHERE email = ?`,
+        [email]
+    );
+
+    return rows[0] || null;
 }
 
-function findRawByEmail(email) {
-  return usuarios.find((x) => x.email === email);
+// Realizar login
+export async function login(email, senha) {
+    const [rows] = await pool.execute(
+        'SELECT id, email, nome, senha FROM usuarios WHERE email = ?',
+        [email]
+    );
+
+    const usuario = rows[0];
+
+    if (!usuario) {
+        return null;
+    }
+
+    const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
+
+    if (!senhaCorreta) {
+        return null;
+    }
+
+    return {
+        id: usuario.id,
+        email: usuario.email,
+        nome: usuario.nome
+    };
 }
 
-export function create(dados) {
-  if (findRawByEmail(dados.email)) {
-    throw HttpError.conflict('E-mail já cadastrado');
-  }
-  const usuario = { id: nextId++, nome: dados.nome, email: dados.email, senha: dados.senha };
-  usuarios.push(usuario);
-  return toPublic(usuario);
+// Criar usuário
+export async function create(dados) {
+    const usuarioExistente = await getByEmail(dados.email);
+
+    if (usuarioExistente) {
+        return false;
+    }
+
+    const senhaHash = await bcrypt.hash(dados.senha, 10);
+
+    const [resultado] = await pool.execute(
+        'INSERT INTO usuarios (email, nome, senha) VALUES (?, ?, ?)',
+        [dados.email, dados.nome, senhaHash]
+    );
+
+    return resultado.insertId;
 }
 
-export function update(id, dados) {
-  const usuario = findRawById(id);
-  if (!usuario) throw HttpError.notFound('Usuário não encontrado');
+// Atualizar usuário
+export async function update(id, dados) {
+    const usuarioExistente = await getById(id);
 
-  if (dados.email && dados.email !== usuario.email && findRawByEmail(dados.email)) {
-    throw HttpError.conflict('E-mail já cadastrado');
-  }
+    if (!usuarioExistente) {
+        return false;
+    }
 
-  if (dados.nome !== undefined) usuario.nome = dados.nome;
-  if (dados.email !== undefined) usuario.email = dados.email;
-  if (dados.senha !== undefined) usuario.senha = dados.senha;
+    const campos = [];
+    const valores = [];
 
-  return toPublic(usuario);
+    if (dados.email !== undefined) {
+        const donoDoEmail = await getByEmail(dados.email);
+
+        if (
+            donoDoEmail &&
+            Number(donoDoEmail.id) !== Number(id)
+        ) {
+            return false;
+        }
+
+        campos.push('email = ?');
+        valores.push(dados.email);
+    }
+
+    if (dados.nome !== undefined) {
+        campos.push('nome = ?');
+        valores.push(dados.nome);
+    }
+
+    if (dados.senha !== undefined && dados.senha !== '') {
+        const senhaHash = await bcrypt.hash(dados.senha, 10);
+
+        campos.push('senha = ?');
+        valores.push(senhaHash);
+    }
+
+    if (campos.length === 0) {
+        return false;
+    }
+
+    valores.push(id);
+
+    await pool.execute(
+        `UPDATE usuarios SET ${campos.join(', ')} WHERE id = ?`,
+        valores
+    );
+
+    return true;
 }
 
-export function remove(id) {
-  const idx = usuarios.findIndex((x) => x.id === id);
-  if (idx === -1) throw HttpError.notFound('Usuário não encontrado');
-  usuarios.splice(idx, 1);
-  return true;
+// Deletar usuário
+export async function remove(id) {
+    const usuarioExistente = await getById(id);
+
+    if (!usuarioExistente) {
+        return false;
+    }
+
+    const conexao = await pool.getConnection();
+
+    try {
+        await conexao.beginTransaction();
+
+        await conexao.execute(
+            'DELETE FROM tarefas WHERE fk_usuario_id = ?',
+            [id]
+        );
+
+        await conexao.execute(
+            'DELETE FROM usuarios WHERE id = ?',
+            [id]
+        );
+
+        await conexao.commit();
+
+        return true;
+    } catch (error) {
+        await conexao.rollback();
+        throw error;
+    } finally {
+        conexao.release();
+    }
 }
 
-export function toPublic(usuario) {
-  if (!usuario) return null;
-  const { senha, ...pub } = usuario;
-  return pub;
-}
-
-export function _reset() {
-  usuarios = [];
-  nextId = 1;
-}

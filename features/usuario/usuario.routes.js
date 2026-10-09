@@ -1,63 +1,144 @@
 import express from 'express';
 import * as usuario from './usuario.service.js';
-import * as tarefa from '../tarefa/tarefa.service.js';
-import { validate } from '../../middlewares/validate.js';
-import { criarUsuarioSchema, atualizarUsuarioSchema, idParamsSchema } from './usuario.schemas.js';
 
 const router = express.Router();
 
-router.get('/', (_req, res) => {
-  res.json({ usuarios: usuario.getAll() });
+// Listar todos os usuários
+router.get('/', async (req, res) => {
+    try {
+        const usuarios = await usuario.getAll();
+
+        return res.status(200).json(usuarios);
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro ao buscar usuários'
+        });
+    }
 });
 
-router.get('/:id', validate(idParamsSchema, 'params'), (req, res, next) => {
-  try {
-    const u = usuario.getById(Number(req.params.id));
-    if (!u) return res.status(404).json({ error: 'Usuário não encontrado', details: [] });
-    res.json({ usuario: u });
-  } catch (e) {
-    next(e);
-  }
+// Buscar usuário por ID
+router.get('/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+
+        const usuarioEncontrado = await usuario.getById(id);
+
+        if (!usuarioEncontrado) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado'
+            });
+        }
+
+        return res.status(200).json(usuarioEncontrado);
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro ao buscar usuário'
+        });
+    }
 });
 
-// Lista tarefas de um usuário específico: cada usuário tem suas tarefas
-router.get('/:id/tarefas', validate(idParamsSchema, 'params'), (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    if (!usuario.getById(id)) return res.status(404).json({ error: 'Usuário não encontrado', details: [] });
-    res.json({ tarefas: tarefa.getAll({ usuarioId: id }) });
-  } catch (e) {
-    next(e);
-  }
+// Criar usuário
+router.post('/', async (req, res) => {
+    try {
+        const id = await usuario.create(req.body);
+
+        if (!id) {
+            return res.status(409).json({
+                error: 'E-mail já cadastrado'
+            });
+        }
+
+        return res.status(201).json({
+            message: 'Usuário criado com sucesso',
+            id
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro ao criar usuário'
+        });
+    }
 });
 
-router.post('/', validate(criarUsuarioSchema), (req, res, next) => {
-  try {
-    const novo = usuario.create(req.body);
-    res.status(201).json({ message: 'Usuário criado', usuario: novo });
-  } catch (e) {
-    next(e);
-  }
+// Login
+router.post('/login', async (req, res) => {
+    try {
+        const usuarioLogado = await usuario.login(
+            req.body.email,
+            req.body.senha
+        );
+
+        if (!usuarioLogado) {
+            return res.status(401).json({
+                error: 'E-mail ou senha inválidos'
+            });
+        }
+
+        return res.status(200).json({
+            message: 'Login realizado com sucesso',
+            usuario: usuarioLogado
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro ao realizar login'
+        });
+    }
 });
 
-router.put('/:id', validate(idParamsSchema, 'params'), validate(atualizarUsuarioSchema), (req, res, next) => {
-  try {
-    const atualizado = usuario.update(Number(req.params.id), req.body);
-    res.json({ message: 'Usuário atualizado', usuario: atualizado });
-  } catch (e) {
-    next(e);
-  }
+// Atualizar usuário
+router.put('/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+
+        const usuarioExistente = await usuario.getById(id);
+
+        if (!usuarioExistente) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado'
+            });
+        }
+
+        const usuarioAtualizado = await usuario.update(id, req.body);
+
+        if (!usuarioAtualizado) {
+            return res.status(400).json({
+                error: 'Não foi possível atualizar o usuário'
+            });
+        }
+
+        return res.status(200).json({
+            message: 'Usuário atualizado com sucesso'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro ao atualizar usuário'
+        });
+    }
 });
 
-router.delete('/:id', validate(idParamsSchema, 'params'), (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    usuario.remove(id);
-    tarefa.removeByUsuarioId(id);
-    res.json({ message: 'Usuário removido' });
-  } catch (e) {
-    next(e);
-  }
+// Deletar usuário
+router.delete('/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+
+        const usuarioExistente = await usuario.getById(id);
+
+        if (!usuarioExistente) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado'
+            });
+        }
+
+        await usuario.remove(id);
+
+        return res.status(200).json({
+            message: 'Usuário deletado com sucesso'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro ao deletar usuário'
+        });
+    }
 });
 
 export default router;
+
