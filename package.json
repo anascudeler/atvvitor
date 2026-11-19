@@ -7,7 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:cadastro": "vitest run tests/usuario.router.test.js -t \"deve cadastrar um usuário\"",
+    "test:listagem": "vitest run tests/usuario.router.test.js -t \"deve listar todos os usuários\"",
+    "test:busca-id": "vitest run tests/usuario.router.test.js -t \"deve buscar um usuário pelo ID\""
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

@@ -5,7 +5,7 @@ import express from 'express';
 import usuarioRoutes from '../features/usuario/usuario.routes.js';
 import * as usuario from '../features/usuario/usuario.service.js';
 
-vi.mock('./usuario.service.js', () => ({
+vi.mock('../features/usuario/usuario.service.js', () => ({
     getAll: vi.fn(),
     getById: vi.fn(),
     getByEmail: vi.fn(),
